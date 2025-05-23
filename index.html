@@ -3,23 +3,478 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>One Block Game</title>
+    <title>Sentient Computer Face</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { margin: 0; overflow: hidden; }
-        canvas { display: block; }
-        #inventory {
-            position: fixed;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.5);
+        body {
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #1a1a2e; /* Dark blueish background */
+            color: #e0e0e0; /* Light text color */
+            overflow-x: hidden;
+        }
+        .face-container {
+            width: 300px;
+            height: 300px;
+            background-color: #2a2a3e; /* Slightly lighter container */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            margin-bottom: 20px;
+            position: relative;
+        }
+        #face-svg {
+            width: 90%;
+            height: 90%;
+        }
+        .controls, .conversation {
+            background-color: #2a2a3e;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(0, 150, 255, 0.3);
+            margin-top: 20px;
+            width: 90%;
+            max-width: 600px;
+            text-align: center;
+        }
+        button {
+            background-color: #007bff; /* Bright blue */
             color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3; /* Darker blue */
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        .status-text, .ai-text, .user-text {
+            margin-top: 10px;
             padding: 10px;
-            font-family: Arial, sans-serif;
+            border-radius: 6px;
+            min-height: 20px; /* Ensure space even when empty */
+        }
+        .user-text {
+            background-color: #3a3a4e;
+            color: #c0c0ff;
+        }
+        .ai-text {
+            background-color: #4a4a5e;
+            color: #d0d0ff;
+            font-style: italic;
+        }
+        .status-text {
+            color: #ffcc00; /* Yellow for status */
+        }
+        .message-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #ff4d4d;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            display: none; /* Hidden by default */
+            max-width: 90%;
+            text-align: center;
+        }
+        .loading-indicator {
+            display: none; /* Hidden by default */
+            margin-top: 10px;
+            font-style: italic;
+            color: #00c0ff;
+        }
+        /* Eye blink animation */
+        .eye-left, .eye-right {
+            animation: blink 5s infinite;
+        }
+        @keyframes blink {
+            0%, 90%, 100% { transform: scaleY(1); }
+            95% { transform: scaleY(0.1); transform-origin: center; }
         }
     </style>
 </head>
 <body>
-    <div id="inventory">Inventory: <span id="inventory-count">0</span> Blocks</div>
-    <script src="script.js"></script>
+    <div class="message-box" id="messageBox"></div>
+
+    <div class="face-container">
+        <svg id="face-svg" viewBox="0 0 300 300">
+            <circle cx="150" cy="150" r="100" fill="#4CAF50" stroke="#388E3C" stroke-width="3"/>
+            <g id="eyes-group">
+                <circle class="eye-left" cx="120" cy="130" r="20" fill="white"/>
+                <circle class="eye-left-pupil" cx="120" cy="130" r="10" fill="black"/>
+                <circle class="eye-right" cx="180" cy="130" r="20" fill="white"/>
+                <circle class="eye-right-pupil" cx="180" cy="130" r="10" fill="black"/>
+            </g>
+            <path id="eyebrowLeft" d="M 100 100 Q 120 90 140 100" stroke="black" stroke-width="5" fill="none" stroke-linecap="round"/>
+            <path id="eyebrowRight" d="M 160 100 Q 180 90 200 100" stroke="black" stroke-width="5" fill="none" stroke-linecap="round"/>
+            <path id="mouth" d="M 130 190 Q 150 200 170 190" stroke="black" stroke-width="5" fill="none" stroke-linecap="round"/>
+        </svg>
+    </div>
+
+    <div class="controls">
+        <button id="toggleMicButton">Start Talking</button>
+        <div class="status-text" id="statusText">Click "Start Talking" to begin.</div>
+        <div class="loading-indicator" id="loadingIndicator">AI is thinking...</div>
+    </div>
+
+    <div class="conversation">
+        <div class="user-text" id="userText">Your words will appear here.</div>
+        <div class="ai-text" id="aiText">AI's response will appear here.</div>
+    </div>
+
+    <script>
+        const toggleMicButton = document.getElementById('toggleMicButton');
+        const statusText = document.getElementById('statusText');
+        const userText = document.getElementById('userText');
+        const aiText = document.getElementById('aiText');
+        const messageBox = document.getElementById('messageBox');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+
+        const faceSvg = document.getElementById('face-svg');
+        const headCircle = faceSvg.querySelector('circle[fill="#4CAF50"]'); // Assuming initial fill is for neutral
+        const mouthPath = document.getElementById('mouth');
+        const eyebrowLeft = document.getElementById('eyebrowLeft');
+        const eyebrowRight = document.getElementById('eyebrowRight');
+        const eyeLeftPupil = faceSvg.querySelector('.eye-left-pupil');
+        const eyeRightPupil = faceSvg.querySelector('.eye-right-pupil');
+
+        let recognition;
+        let isRecognizing = false;
+        let conversationHistory = [];
+        let talkingInterval;
+
+        // Check for SpeechRecognition API
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false; // Process after user stops speaking for a moment
+            recognition.interimResults = true; // Show interim results as they come
+            recognition.lang = 'en-US';
+
+            // Event handler when recognition starts
+            recognition.onstart = () => {
+                isRecognizing = true;
+                statusText.textContent = 'Listening... Speak now!';
+                toggleMicButton.textContent = 'Stop Listening';
+                setFaceExpression('listening');
+            };
+
+            // Event handler for speech recognition results
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+                userText.textContent = finalTranscript || interimTranscript; // Display final or interim
+                if (finalTranscript && isRecognizing) {
+                    // Automatically stop if a final result is received and recognition is active
+                    // This helps to process the speech quicker after a pause.
+                    recognition.stop();
+                }
+            };
+
+            // Event handler when recognition ends
+            recognition.onend = () => {
+                isRecognizing = false;
+                toggleMicButton.textContent = 'Start Talking';
+                statusText.textContent = 'Processing your speech...';
+                const spokenText = userText.textContent.trim();
+                if (spokenText) {
+                    conversationHistory.push({ role: "user", parts: [{ text: spokenText }] });
+                    getAIResponse(spokenText);
+                } else {
+                    statusText.textContent = 'No speech detected. Click "Start Talking" again.';
+                    setFaceExpression('neutral'); // Revert to neutral if no speech
+                }
+            };
+
+            // Event handler for speech recognition errors
+            recognition.onerror = (event) => {
+                isRecognizing = false;
+                toggleMicButton.textContent = 'Start Talking';
+                console.error('Speech recognition error:', event.error, event.message);
+                let errorMessage = 'Speech recognition error: ' + event.error;
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    errorMessage = 'Microphone access denied. Please allow microphone access for this site in your browser settings. Look for a lock icon near the address bar or check site/microphone settings in your browser menu.';
+                } else if (event.error === 'no-speech') {
+                    errorMessage = 'No speech detected. Please try again.';
+                } else if (event.error === 'network') {
+                    errorMessage = 'Network error during speech recognition. Check your connection.';
+                } else if (event.error === 'audio-capture') {
+                    errorMessage = 'Audio capture failed. Ensure your microphone is working and not used by another app.';
+                }
+                statusText.textContent = errorMessage;
+                showMessage(errorMessage, true);
+                setFaceExpression('sad'); // Show a sad face on error
+            };
+        } else {
+            statusText.textContent = 'Speech recognition not supported in this browser.';
+            toggleMicButton.disabled = true;
+            showMessage('Speech recognition not supported in this browser. Try Chrome or Edge.', true);
+        }
+
+        // Event listener for the microphone toggle button
+        toggleMicButton.addEventListener('click', () => {
+            if (!SpeechRecognition) return; // Guard if API not supported
+            if (isRecognizing) {
+                recognition.stop();
+            } else {
+                if (typeof recognition.start === 'function') {
+                    try {
+                        userText.textContent = ""; // Clear previous user text
+                        aiText.textContent = "";   // Clear previous AI text
+                        recognition.start();
+                    } catch (e) {
+                        console.error("Error starting recognition: ", e);
+                        statusText.textContent = 'Could not start microphone. Check permissions and ensure it is not in use.';
+                        showMessage('Could not start microphone. Please check permissions (lock icon in address bar) and ensure your microphone is not in use by another application.', true);
+                    }
+                } else {
+                    statusText.textContent = 'Recognition API not properly initialized.';
+                    showMessage('Recognition API not properly initialized.', true);
+                }
+            }
+        });
+
+        // Function to change the face's visual expression
+        function setFaceExpression(emotion = 'neutral', isTalking = false) {
+            let headColor = '#4CAF50'; // Default Green for neutral
+            let mouthD = 'M 130 190 Q 150 200 170 190'; // Neutral slight smile
+            let eyebrowLeftD = 'M 100 100 Q 120 90 140 100'; // Neutral eyebrows
+            let eyebrowRightD = 'M 160 100 Q 180 90 200 100';
+            let pupilOffsetX = 0;
+            let pupilOffsetY = 0;
+
+            switch (emotion) {
+                case 'happy':
+                    headColor = '#FFEB3B'; // Yellow
+                    mouthD = 'M 120 190 Q 150 220 180 190'; // Big smile
+                    eyebrowLeftD = 'M 100 95 Q 120 80 140 95'; // Arched up
+                    eyebrowRightD = 'M 160 95 Q 180 80 200 95';
+                    break;
+                case 'sad':
+                    headColor = '#607D8B'; // Blue Grey
+                    mouthD = 'M 130 210 Q 150 190 170 210'; // Frown
+                    eyebrowLeftD = 'M 100 110 Q 120 120 140 105'; // Slanted up at outer ends
+                    eyebrowRightD = 'M 160 105 Q 180 120 200 110';
+                    break;
+                case 'angry':
+                    headColor = '#F44336'; // Red
+                    mouthD = 'M 120 200 L 180 200'; // Straight angry line
+                    eyebrowLeftD = 'M 100 110 Q 120 100 140 110'; // Angled down towards center
+                    eyebrowRightD = 'M 160 110 Q 180 100 200 110';
+                    break;
+                case 'scared':
+                    headColor = '#9C27B0'; // Purple
+                    mouthD = 'M 140 190 Q 150 220 160 210 A 10 10 0 0 1 140 190 Z'; // Jagged, open
+                    eyebrowLeftD = 'M 100 90 Q 120 70 140 90'; // Raised high
+                    eyebrowRightD = 'M 160 90 Q 180 70 200 90';
+                    pupilOffsetX = (Math.random() - 0.5) * 6; // Shifty eyes
+                    pupilOffsetY = (Math.random() - 0.5) * 6;
+                    break;
+                case 'listening':
+                    headColor = '#03A9F4'; // Light Blue
+                    mouthD = 'M 130 190 Q 150 200 170 190'; // Neutral
+                    pupilOffsetX = Math.sin(Date.now() / 300) * 3; // Subtle eye movement
+                    pupilOffsetY = Math.cos(Date.now() / 450) * 2;
+                    break;
+                case 'thinking':
+                    headColor = '#FF9800'; // Orange
+                    mouthD = 'M 130 195 L 170 195'; // Neutral small straight mouth
+                    pupilOffsetX = 5; // Looking up-right
+                    pupilOffsetY = -5;
+                    break;
+            }
+
+            headCircle.setAttribute('fill', headColor);
+            mouthPath.setAttribute('d', mouthD);
+            eyebrowLeft.setAttribute('d', eyebrowLeftD);
+            eyebrowRight.setAttribute('d', eyebrowRightD);
+            
+            eyeLeftPupil.setAttribute('cx', 120 + pupilOffsetX);
+            eyeLeftPupil.setAttribute('cy', 130 + pupilOffsetY);
+            eyeRightPupil.setAttribute('cx', 180 + pupilOffsetX);
+            eyeRightPupil.setAttribute('cy', 130 + pupilOffsetY);
+
+            // Mouth animation for talking
+            if (isTalking) {
+                let mouthOpen = false;
+                // Define open/closed states for different emotions for more expressiveness
+                const talkingMouthShapes = {
+                    happy: { open: 'M 125 190 Q 150 225 175 190', closed: 'M 130 190 Q 150 215 170 190' },
+                    sad: { open: 'M 125 210 Q 150 185 175 210', closed: 'M 130 210 Q 150 190 170 210' },
+                    angry: { open: 'M 115 200 L 185 200', closed: 'M 120 200 L 180 200' },
+                    scared: { open: 'M 135 185 Q 150 225 165 215 A 15 15 0 0 1 135 185 Z', closed: 'M 140 190 Q 150 220 160 210 A 10 10 0 0 1 140 190 Z'},
+                    neutral: { open: 'M 130 185 Q 150 210 170 185', closed: 'M 130 190 Q 150 200 170 190' },
+                    listening: { open: 'M 130 185 Q 150 205 170 185', closed: 'M 130 190 Q 150 200 170 190' },
+                    thinking: { open: 'M 130 190 L 170 190', closed: 'M 130 195 L 170 195' }
+                };
+                
+                const currentShapes = talkingMouthShapes[emotion] || talkingMouthShapes.neutral;
+
+                if (talkingInterval) clearInterval(talkingInterval);
+                talkingInterval = setInterval(() => {
+                    mouthPath.setAttribute('d', mouthOpen ? currentShapes.closed : currentShapes.open);
+                    mouthOpen = !mouthOpen;
+                }, 150); // Speed of talking animation
+            } else {
+                if (talkingInterval) clearInterval(talkingInterval);
+                // Ensure mouth returns to the static emotional state when not talking
+                mouthPath.setAttribute('d', mouthD); 
+            }
+        }
+        
+        setFaceExpression('neutral'); // Set initial face state
+
+        // Function to get AI response from Gemini API
+        async function getAIResponse(text) {
+            loadingIndicator.style.display = 'block';
+            statusText.textContent = 'AI is thinking...';
+            setFaceExpression('thinking');
+            aiText.textContent = ""; // Clear previous AI text
+
+            const apiKey = "AIzaSyDKjzyp-ANjQW6qO8zLvjbAdW4l0yDOxwc"; // API Key inserted here
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            
+            const shortHistory = conversationHistory.slice(-6); // Keep last 3 user/model pairs
+
+            const payload = {
+                contents: shortHistory,
+                // generationConfig: { "temperature": 0.7, "topP": 0.9, "topK": 40 }
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('API Error:', errorData);
+                    throw new Error(`API request failed: ${response.status} ${response.statusText}. ${errorData.error?.message || 'Check console for details.'}`);
+                }
+
+                const result = await response.json();
+                loadingIndicator.style.display = 'none';
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const aiResponseText = result.candidates[0].content.parts[0].text;
+                    aiText.textContent = aiResponseText;
+                    conversationHistory.push({ role: "model", parts: [{ text: aiResponseText }] });
+                    
+                    const detectedEmotion = detectEmotionFromText(aiResponseText);
+                    statusText.textContent = `AI responded. Ready for next input.`;
+                    speakText(aiResponseText, detectedEmotion);
+
+                } else {
+                    console.error('Unexpected API response structure:', result);
+                    aiText.textContent = 'Sorry, I received an unusual response. Please try again.';
+                    statusText.textContent = 'Error with AI response. Try again.';
+                    speakText('Sorry, I received an unusual response from the AI. Please try again.', 'sad');
+                }
+            } catch (error) {
+                console.error('Error fetching AI response:', error);
+                loadingIndicator.style.display = 'none';
+                const displayError = error.message.includes("API key not valid") ? "API key not valid. Please pass a valid API key." : error.message;
+                aiText.textContent = `Error: ${displayError}`;
+                statusText.textContent = 'Error fetching AI response.';
+                speakText(`I encountered an error trying to respond: ${displayError}`, 'sad');
+            }
+        }
+
+        // Simple heuristic to detect emotion from text
+        function detectEmotionFromText(text) {
+            const lowerText = text.toLowerCase();
+            if (/\b(yay|woohoo|hooray|celebrate|wonderful|fantastic|amazing|awesome|excellent|great|love|happy|joy|glad|pleased|delighted)\b/.test(lowerText)) return 'happy';
+            if (/\b(alas|sad|unhappy|cry|sob|sorry|bad|awful|terrible|unfortunately|gloomy|depressed|miserable|grief)\b/.test(lowerText)) return 'sad';
+            if (/\b(angry|furious|hate|annoyed|frustrated|mad|irritated|outraged|damn|blast)\b/.test(lowerText)) return 'angry';
+            if (/\b(scared|afraid|help|danger|watch out|terrified|frightened|panic|eeks|yikes|whoa|ah)\b/.test(lowerText)) return 'scared';
+            // 'Surprise' can be mapped to 'scared' for simplicity or a new expression
+            if (/\b(wow|really|surprised|unexpected|gosh|omg)\b/.test(lowerText)) return 'scared'; 
+            return 'neutral';
+        }
+
+        // Function to speak text using browser's speech synthesis
+        function speakText(textToSpeak, emotion) {
+            if (!('speechSynthesis' in window)) {
+                showMessage('Speech synthesis not supported in this browser.', true);
+                setFaceExpression(emotion, false); // Set emotion but no talking animation
+                return;
+            }
+            
+            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            utterance.lang = 'en-US';
+            // utterance.pitch = 1;
+            // utterance.rate = 1;
+            // const voices = speechSynthesis.getVoices();
+            // utterance.voice = voices.find(voice => voice.name === 'Google US English') || voices[0];
+            
+            utterance.onstart = () => {
+                setFaceExpression(emotion, true); // Start talking animation
+            };
+            utterance.onend = () => {
+                setFaceExpression(emotion, false); // Stop talking animation, keep emotion
+                // Optionally revert to neutral after a short delay
+                // setTimeout(() => setFaceExpression('neutral'), 1500);
+            };
+            utterance.onerror = (event) => {
+                console.error('Speech synthesis error:', event.error, event.message);
+                showMessage('Error speaking: ' + event.error + ". Try a different browser or check system audio.", true);
+                setFaceExpression(emotion, false); // Stop talking animation on error
+            };
+            
+            speechSynthesis.cancel(); // Cancel any ongoing speech
+            speechSynthesis.speak(utterance);
+        }
+
+        // Function to display a temporary message to the user
+        function showMessage(message, isError = false) {
+            messageBox.textContent = message;
+            messageBox.style.backgroundColor = isError ? '#b91c1c' : '#047857'; // Darker Red for error, Darker Green for success
+            messageBox.style.color = 'white';
+            messageBox.style.display = 'block';
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, isError ? 5000 : 3000); // Show errors for a bit longer
+        }
+
+        // Optional: Initial greeting when the page loads
+        // setTimeout(() => {
+        //     const greeting = "Hello! I'm your friendly screen face. Click 'Start Talking' and let's chat!";
+        //     aiText.textContent = greeting;
+        //     speakText(greeting, 'happy');
+        // }, 500);
+
+    </script>
 </body>
 </html>
